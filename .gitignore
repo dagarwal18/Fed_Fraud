@@ -3,3 +3,7 @@ banks/
 *.json
 __pycache__/
 venv/
+models/
+mlruns/
+stream_log.jsonl
+*.db

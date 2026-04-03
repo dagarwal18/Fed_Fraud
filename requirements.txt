@@ -3,3 +3,7 @@ torch
 scikit-learn
 pandas
 numpy
+mlflow
+fastapi
+uvicorn[standard]
+websockets

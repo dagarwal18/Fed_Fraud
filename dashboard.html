@@ -1,0 +1,698 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Federated Fraud Detection — Live Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        :root {
+            --bg-primary: #0a0e1a;
+            --bg-card: rgba(15, 23, 42, 0.85);
+            --bg-card-border: rgba(100, 120, 200, 0.15);
+            --text-primary: #e2e8f0;
+            --text-secondary: #94a3b8;
+            --text-muted: #64748b;
+            --accent-blue: #3b82f6;
+            --accent-green: #22c55e;
+            --accent-red: #ef4444;
+            --accent-purple: #a855f7;
+            --accent-yellow: #eab308;
+            --accent-cyan: #06b6d4;
+            --glass-bg: rgba(15, 23, 42, 0.6);
+            --glass-border: rgba(148, 163, 184, 0.1);
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* Animated gradient background */
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background:
+                radial-gradient(ellipse at 20% 50%, rgba(59, 130, 246, 0.08) 0%, transparent 50%),
+                radial-gradient(ellipse at 80% 20%, rgba(168, 85, 247, 0.06) 0%, transparent 50%),
+                radial-gradient(ellipse at 50% 80%, rgba(6, 182, 212, 0.05) 0%, transparent 50%);
+            z-index: -1;
+            animation: bgShift 20s ease-in-out infinite alternate;
+        }
+
+        @keyframes bgShift {
+            0% { opacity: 1; }
+            100% { opacity: 0.7; transform: scale(1.05); }
+        }
+
+        /* Header */
+        .header {
+            padding: 24px 32px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid var(--glass-border);
+            backdrop-filter: blur(20px);
+            background: rgba(10, 14, 26, 0.8);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .header h1 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--accent-blue), var(--accent-cyan));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .header .status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+
+        .status-dot {
+            width: 8px; height: 8px;
+            border-radius: 50%;
+            background: var(--text-muted);
+            transition: background 0.3s;
+        }
+
+        .status-dot.connected {
+            background: var(--accent-green);
+            box-shadow: 0 0 8px rgba(34, 197, 94, 0.5);
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* Layout */
+        .dashboard {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            grid-template-rows: auto auto auto;
+            gap: 20px;
+            padding: 24px 32px;
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+
+        /* Cards */
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--bg-card-border);
+            border-radius: 16px;
+            padding: 24px;
+            backdrop-filter: blur(12px);
+            transition: transform 0.2s, border-color 0.3s;
+        }
+
+        .card:hover {
+            transform: translateY(-2px);
+            border-color: rgba(100, 120, 200, 0.3);
+        }
+
+        .card-title {
+            font-size: 0.8rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1.2px;
+            color: var(--text-muted);
+            margin-bottom: 16px;
+        }
+
+        .card-title span {
+            font-size: 0.7rem;
+            font-weight: 400;
+            color: var(--text-secondary);
+            text-transform: none;
+            letter-spacing: 0;
+        }
+
+        /* Grid placement */
+        .card-convergence { grid-column: 1 / 2; }
+        .card-perbank { grid-column: 2 / 3; }
+        .card-comparison { grid-column: 3 / 4; }
+        .card-stream { grid-column: 1 / 3; grid-row: 2 / 4; }
+        .card-kpi { grid-column: 3 / 4; grid-row: 2 / 4; }
+
+        /* Chart containers */
+        .chart-container {
+            position: relative;
+            height: 220px;
+        }
+
+        /* KPI Cards */
+        .kpi-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 14px;
+        }
+
+        .kpi {
+            background: rgba(30, 41, 59, 0.5);
+            border: 1px solid var(--glass-border);
+            border-radius: 12px;
+            padding: 16px;
+            text-align: center;
+            transition: border-color 0.3s;
+        }
+
+        .kpi-value {
+            font-size: 1.8rem;
+            font-weight: 700;
+            font-variant-numeric: tabular-nums;
+            transition: color 0.3s;
+        }
+
+        .kpi-label {
+            font-size: 0.7rem;
+            font-weight: 500;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            margin-top: 4px;
+        }
+
+        .kpi-total .kpi-value { color: var(--accent-cyan); }
+        .kpi-tp .kpi-value { color: var(--accent-green); }
+        .kpi-fp .kpi-value { color: var(--accent-purple); }
+        .kpi-fn .kpi-value { color: var(--accent-yellow); }
+        .kpi-precision .kpi-value { color: var(--accent-blue); }
+        .kpi-recall .kpi-value { color: var(--accent-red); }
+
+        .kpi-fp { border-color: rgba(168, 85, 247, 0.25); }
+        .kpi-fn { border-color: rgba(234, 179, 8, 0.25); }
+
+        /* Transaction stream */
+        .stream-container {
+            height: 500px;
+            overflow-y: auto;
+            scrollbar-width: thin;
+            scrollbar-color: var(--text-muted) transparent;
+        }
+
+        .stream-container::-webkit-scrollbar { width: 6px; }
+        .stream-container::-webkit-scrollbar-thumb {
+            background: var(--text-muted);
+            border-radius: 3px;
+        }
+
+        .stream-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.78rem;
+        }
+
+        .stream-table thead {
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+
+        .stream-table th {
+            background: rgba(15, 23, 42, 0.95);
+            padding: 10px 8px;
+            text-align: left;
+            font-weight: 600;
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            color: var(--text-muted);
+            border-bottom: 1px solid var(--glass-border);
+        }
+
+        .stream-table td {
+            padding: 8px;
+            border-bottom: 1px solid rgba(148, 163, 184, 0.05);
+            font-variant-numeric: tabular-nums;
+            transition: background 0.3s;
+        }
+
+        .stream-table tr {
+            animation: fadeIn 0.3s ease-out;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateX(-8px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+
+        /* Row colors */
+        .row-true_positive { background: rgba(34, 197, 94, 0.08); }
+        .row-true_positive td:first-child { border-left: 3px solid var(--accent-green); }
+
+        .row-true_negative { background: transparent; }
+
+        .row-false_positive { background: rgba(168, 85, 247, 0.1); }
+        .row-false_positive td:first-child { border-left: 3px solid var(--accent-purple); }
+
+        .row-false_negative { background: rgba(234, 179, 8, 0.1); }
+        .row-false_negative td:first-child { border-left: 3px solid var(--accent-yellow); }
+
+        .badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 6px;
+            font-size: 0.7rem;
+            font-weight: 600;
+        }
+
+        .badge-fraud { background: rgba(239, 68, 68, 0.2); color: var(--accent-red); }
+        .badge-legit { background: rgba(34, 197, 94, 0.15); color: var(--accent-green); }
+        .badge-fp { background: rgba(168, 85, 247, 0.2); color: var(--accent-purple); }
+        .badge-fn { background: rgba(234, 179, 8, 0.2); color: var(--accent-yellow); }
+
+        .prob-bar {
+            width: 60px;
+            height: 6px;
+            background: rgba(100, 116, 139, 0.3);
+            border-radius: 3px;
+            overflow: hidden;
+            display: inline-block;
+            vertical-align: middle;
+            margin-right: 6px;
+        }
+
+        .prob-bar-fill {
+            height: 100%;
+            border-radius: 3px;
+            transition: width 0.3s;
+        }
+
+        /* Legend */
+        .legend {
+            display: flex;
+            gap: 16px;
+            margin-bottom: 12px;
+            flex-wrap: wrap;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.7rem;
+            color: var(--text-secondary);
+        }
+
+        .legend-dot {
+            width: 10px; height: 10px;
+            border-radius: 3px;
+        }
+
+        /* Loading state */
+        .loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 200px;
+            color: var(--text-muted);
+            font-size: 0.9rem;
+        }
+
+        .loading::after {
+            content: '';
+            width: 20px; height: 20px;
+            border: 2px solid var(--text-muted);
+            border-top-color: var(--accent-blue);
+            border-radius: 50%;
+            margin-left: 10px;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>⚡ Federated Fraud Detection — Live Monitor</h1>
+        <div class="status">
+            <div class="status-dot" id="statusDot"></div>
+            <span id="statusText">Connecting...</span>
+        </div>
+    </div>
+
+    <div class="dashboard">
+        <!-- Row 1: Charts -->
+        <div class="card card-convergence">
+            <div class="card-title">FL Training Convergence <span>— Global Test AUC per Round</span></div>
+            <div class="chart-container"><canvas id="chartConvergence"></canvas></div>
+        </div>
+
+        <div class="card card-perbank">
+            <div class="card-title">Per-Bank Performance <span>— Local vs Global AUC</span></div>
+            <div class="chart-container"><canvas id="chartPerBank"></canvas></div>
+        </div>
+
+        <div class="card card-comparison">
+            <div class="card-title">Federated vs Baseline <span>— Global Test AUC</span></div>
+            <div class="chart-container"><canvas id="chartComparison"></canvas></div>
+        </div>
+
+        <!-- Row 2-3: Stream + KPIs -->
+        <div class="card card-stream">
+            <div class="card-title">Live Transaction Stream <span>— Real-time fraud scoring</span></div>
+            <div class="legend">
+                <div class="legend-item"><div class="legend-dot" style="background:var(--accent-green)"></div> True Positive (Fraud caught)</div>
+                <div class="legend-item"><div class="legend-dot" style="background:var(--accent-purple)"></div> False Positive (False alarm)</div>
+                <div class="legend-item"><div class="legend-dot" style="background:var(--accent-yellow)"></div> False Negative (Missed fraud)</div>
+                <div class="legend-item"><div class="legend-dot" style="background:var(--text-muted)"></div> True Negative (Correct legit)</div>
+            </div>
+            <div class="stream-container" id="streamContainer">
+                <table class="stream-table">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Time</th>
+                            <th>Bank</th>
+                            <th>Amount</th>
+                            <th>Fraud Score</th>
+                            <th>Prediction</th>
+                            <th>Actual</th>
+                            <th>Result</th>
+                        </tr>
+                    </thead>
+                    <tbody id="streamBody"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="card card-kpi">
+            <div class="card-title">Fraud Alert Summary <span>— Live counters</span></div>
+            <div class="kpi-grid">
+                <div class="kpi kpi-total">
+                    <div class="kpi-value" id="kpiTotal">0</div>
+                    <div class="kpi-label">Processed</div>
+                </div>
+                <div class="kpi kpi-tp">
+                    <div class="kpi-value" id="kpiTP">0</div>
+                    <div class="kpi-label">Frauds Caught</div>
+                </div>
+                <div class="kpi kpi-fp">
+                    <div class="kpi-value" id="kpiFP">0</div>
+                    <div class="kpi-label">False Alarms</div>
+                </div>
+                <div class="kpi kpi-fn">
+                    <div class="kpi-value" id="kpiFN">0</div>
+                    <div class="kpi-label">Missed Frauds</div>
+                </div>
+                <div class="kpi kpi-precision">
+                    <div class="kpi-value" id="kpiPrecision">—</div>
+                    <div class="kpi-label">Live Precision</div>
+                </div>
+                <div class="kpi kpi-recall">
+                    <div class="kpi-value" id="kpiRecall">—</div>
+                    <div class="kpi-label">Live Recall</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ─── Chart.js Global Config ──────────────────────────
+        Chart.defaults.color = '#94a3b8';
+        Chart.defaults.borderColor = 'rgba(148, 163, 184, 0.1)';
+        Chart.defaults.font.family = 'Inter';
+
+        // ─── State ──────────────────────────────────────────
+        const state = {
+            total: 0,
+            tp: 0,
+            fp: 0,
+            fn: 0,
+            tn: 0,
+        };
+
+        // ─── Load Static Charts ─────────────────────────────
+
+        async function loadCharts() {
+            const [flRes, blRes] = await Promise.all([
+                fetch('/api/fl-results').then(r => r.json()),
+                fetch('/api/baseline').then(r => r.json()),
+            ]);
+
+            // 1. Convergence Chart
+            if (Array.isArray(flRes)) {
+                new Chart(document.getElementById('chartConvergence'), {
+                    type: 'line',
+                    data: {
+                        labels: flRes.map(r => `R${r.round}`),
+                        datasets: [{
+                            label: 'Global AUC',
+                            data: flRes.map(r => r.global.auc),
+                            borderColor: '#3b82f6',
+                            backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                            borderWidth: 2.5,
+                            tension: 0.3,
+                            fill: true,
+                            pointRadius: 4,
+                            pointBackgroundColor: '#3b82f6',
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: false },
+                        },
+                        scales: {
+                            y: {
+                                min: 0.3,
+                                max: 0.85,
+                                ticks: { callback: v => v.toFixed(2) },
+                                grid: { color: 'rgba(148, 163, 184, 0.06)' }
+                            },
+                            x: { grid: { display: false } }
+                        }
+                    }
+                });
+            }
+
+            // 2. Per-Bank Chart
+            if (Array.isArray(blRes)) {
+                const banks = blRes.map(b => b.bank_id.replace('bank_', 'Bank '));
+                new Chart(document.getElementById('chartPerBank'), {
+                    type: 'bar',
+                    data: {
+                        labels: banks,
+                        datasets: [
+                            {
+                                label: 'Local Val AUC',
+                                data: blRes.map(b => b.val.auc),
+                                backgroundColor: 'rgba(6, 182, 212, 0.6)',
+                                borderRadius: 6,
+                            },
+                            {
+                                label: 'Global Test AUC',
+                                data: blRes.map(b => b.test.auc),
+                                backgroundColor: 'rgba(239, 68, 68, 0.6)',
+                                borderRadius: 6,
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                position: 'bottom',
+                                labels: { boxWidth: 12, padding: 12, font: { size: 11 } }
+                            }
+                        },
+                        scales: {
+                            y: {
+                                min: 0,
+                                max: 1,
+                                ticks: { callback: v => v.toFixed(1) },
+                                grid: { color: 'rgba(148, 163, 184, 0.06)' }
+                            },
+                            x: { grid: { display: false } }
+                        }
+                    }
+                });
+
+                // 3. Comparison Chart
+                if (Array.isArray(flRes) && flRes.length > 0) {
+                    const avgBaseline = blRes.reduce((s, b) => s + b.test.auc, 0) / blRes.length;
+                    const bestBaseline = Math.max(...blRes.map(b => b.test.auc));
+                    const fedAuc = flRes[flRes.length - 1].global.auc;
+                    const improvement = ((fedAuc - avgBaseline) / avgBaseline * 100).toFixed(1);
+
+                    new Chart(document.getElementById('chartComparison'), {
+                        type: 'bar',
+                        data: {
+                            labels: ['Avg Baseline', 'Best Baseline', `Federated (+${improvement}%)`],
+                            datasets: [{
+                                data: [avgBaseline, bestBaseline, fedAuc],
+                                backgroundColor: [
+                                    'rgba(100, 116, 139, 0.5)',
+                                    'rgba(6, 182, 212, 0.6)',
+                                    'rgba(59, 130, 246, 0.8)',
+                                ],
+                                borderRadius: 8,
+                                borderSkipped: false,
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            indexAxis: 'y',
+                            plugins: {
+                                legend: { display: false },
+                            },
+                            scales: {
+                                x: {
+                                    min: 0,
+                                    max: 1,
+                                    ticks: { callback: v => v.toFixed(2) },
+                                    grid: { color: 'rgba(148, 163, 184, 0.06)' }
+                                },
+                                y: { grid: { display: false } }
+                            }
+                        }
+                    });
+                }
+            }
+        }
+
+        // ─── WebSocket: Live Stream ─────────────────────────
+
+        function connectStream() {
+            const ws = new WebSocket(`ws://${window.location.host}/ws/stream`);
+            const dot = document.getElementById('statusDot');
+            const text = document.getElementById('statusText');
+
+            ws.onopen = () => {
+                dot.classList.add('connected');
+                text.textContent = 'Streaming transactions...';
+            };
+
+            ws.onclose = () => {
+                dot.classList.remove('connected');
+                text.textContent = 'Disconnected';
+            };
+
+            ws.onmessage = (event) => {
+                const msg = JSON.parse(event.data);
+
+                if (msg.type === 'complete') {
+                    text.textContent = `Complete — ${msg.total} transactions processed`;
+                    dot.classList.remove('connected');
+                    return;
+                }
+
+                if (msg.type === 'error') {
+                    text.textContent = `Error: ${msg.message}`;
+                    dot.classList.remove('connected');
+                    return;
+                }
+
+                // Update counters
+                state.total++;
+                if (msg.category === 'true_positive') state.tp++;
+                else if (msg.category === 'false_positive') state.fp++;
+                else if (msg.category === 'false_negative') state.fn++;
+                else state.tn++;
+
+                updateKPIs();
+                addStreamRow(msg);
+            };
+        }
+
+        function updateKPIs() {
+            document.getElementById('kpiTotal').textContent = state.total.toLocaleString();
+            document.getElementById('kpiTP').textContent = state.tp.toLocaleString();
+            document.getElementById('kpiFP').textContent = state.fp.toLocaleString();
+            document.getElementById('kpiFN').textContent = state.fn.toLocaleString();
+
+            const precision = (state.tp + state.fp) > 0
+                ? (state.tp / (state.tp + state.fp) * 100).toFixed(1) + '%'
+                : '—';
+            const recall = (state.tp + state.fn) > 0
+                ? (state.tp / (state.tp + state.fn) * 100).toFixed(1) + '%'
+                : '—';
+
+            document.getElementById('kpiPrecision').textContent = precision;
+            document.getElementById('kpiRecall').textContent = recall;
+        }
+
+        function addStreamRow(msg) {
+            const tbody = document.getElementById('streamBody');
+            const container = document.getElementById('streamContainer');
+
+            const row = document.createElement('tr');
+            row.className = `row-${msg.category}`;
+
+            // Fraud probability bar color
+            let barColor;
+            if (msg.fraud_prob >= 0.7) barColor = 'var(--accent-red)';
+            else if (msg.fraud_prob >= 0.5) barColor = 'var(--accent-yellow)';
+            else if (msg.fraud_prob >= 0.3) barColor = 'var(--accent-blue)';
+            else barColor = 'var(--accent-green)';
+
+            // Prediction badge
+            let predBadge;
+            if (msg.category === 'false_positive') predBadge = '<span class="badge badge-fp">FALSE +</span>';
+            else if (msg.category === 'false_negative') predBadge = '<span class="badge badge-fn">MISSED</span>';
+            else if (msg.prediction === 'FRAUD') predBadge = '<span class="badge badge-fraud">FRAUD</span>';
+            else predBadge = '<span class="badge badge-legit">LEGIT</span>';
+
+            // Actual badge
+            const actualBadge = msg.actual === 'FRAUD'
+                ? '<span class="badge badge-fraud">FRAUD</span>'
+                : '<span class="badge badge-legit">LEGIT</span>';
+
+            row.innerHTML = `
+                <td>${msg.index}</td>
+                <td>${msg.timestamp}</td>
+                <td>${msg.bank.replace('bank_', '')}</td>
+                <td>$${msg.amount.toFixed(2)}</td>
+                <td>
+                    <div class="prob-bar">
+                        <div class="prob-bar-fill" style="width:${msg.fraud_prob * 100}%;background:${barColor}"></div>
+                    </div>
+                    ${msg.fraud_prob.toFixed(3)}
+                </td>
+                <td>${predBadge}</td>
+                <td>${actualBadge}</td>
+                <td>${msg.correct ? '✓' : '✗'}</td>
+            `;
+
+            // Insert at top
+            if (tbody.firstChild) {
+                tbody.insertBefore(row, tbody.firstChild);
+            } else {
+                tbody.appendChild(row);
+            }
+
+            // Keep only 200 rows
+            while (tbody.children.length > 200) {
+                tbody.removeChild(tbody.lastChild);
+            }
+
+            // Auto-scroll to top
+            container.scrollTop = 0;
+        }
+
+        // ─── Init ───────────────────────────────────────────
+        loadCharts();
+        connectStream();
+    </script>
+</body>
+</html>

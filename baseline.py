@@ -2,20 +2,25 @@
 Baseline Comparison (PyTorch)
 =============================
 Trains a single-bank MLP model on each bank independently,
-then compares against the federated model's performance on a 
+then compares against the federated model's performance on a
 GLOBAL test set (combined test sets of all banks).
+
+Logs all metrics to MLflow and saves per-bank models to models/.
 """
 
 import json
 import numpy as np
 import os
 import torch
+import mlflow
 from torch.utils.data import TensorDataset, DataLoader
 
-from config import BANK_IDS, NN_PARAMS
+from config import BANK_IDS, NN_PARAMS, PROJECT_ROOT
 from data_loader import load_bank_data, load_global_test_data
 from model import FraudMLP, train_model, evaluate_model
 from utils import print_banner, print_metrics
+
+MODELS_DIR = os.path.join(PROJECT_ROOT, "models")
 
 
 def train_single_bank(bank_id: str, global_testloader: DataLoader) -> dict:
@@ -34,14 +39,16 @@ def train_single_bank(bank_id: str, global_testloader: DataLoader) -> dict:
     valloader = DataLoader(val_ds, batch_size=NN_PARAMS["batch_size"] * 2)
 
     model = FraudMLP().to(device)
-    
-    # Train for more epochs locally for the standalone baseline since 
-    # the federated clients will train iteratively for 10 FL rounds.
+
     train_model(model, trainloader, epochs=10, device=device)
 
-    # Local validation performance
+    # Save the trained model
+    os.makedirs(MODELS_DIR, exist_ok=True)
+    model_path = os.path.join(MODELS_DIR, f"baseline_{bank_id}.pth")
+    torch.save(model.state_dict(), model_path)
+    print(f"  [{bank_id}] Model saved to {model_path}")
+
     val_metrics = evaluate_model(model, valloader, device)
-    # Global test performance
     test_metrics = evaluate_model(model, global_testloader, device)
 
     return {
@@ -55,7 +62,7 @@ def train_single_bank(bank_id: str, global_testloader: DataLoader) -> dict:
 
 def main():
     print_banner("BASELINE: Single-Bank Model Performance (PyTorch MLP)", char="█")
-    
+
     # 1. Load GLOBAL test set
     print("  Loading GLOBAL test set...")
     g_X, g_y = load_global_test_data()
@@ -65,11 +72,39 @@ def main():
     global_testloader = DataLoader(global_test_ds, batch_size=NN_PARAMS["batch_size"] * 2)
     print(f"  [Global Test] {len(g_y)} samples with {g_y.mean()*100:.2f}% fraud rate.")
 
+    # Set up MLflow
+    mlflow.set_experiment("federated_fraud_detection")
+
     results = []
     for bank_id in BANK_IDS:
         print(f"\n  Training {bank_id} baseline...")
-        result = train_single_bank(bank_id, global_testloader)
-        results.append(result)
+
+        with mlflow.start_run(run_name=f"baseline_{bank_id}"):
+            mlflow.log_params({
+                "model_type": "baseline",
+                "bank_id": bank_id,
+                "epochs": 10,
+                "hidden_size_1": NN_PARAMS["hidden_size_1"],
+                "hidden_size_2": NN_PARAMS["hidden_size_2"],
+                "learning_rate": NN_PARAMS["learning_rate"],
+            })
+
+            result = train_single_bank(bank_id, global_testloader)
+            results.append(result)
+
+            # Log to MLflow
+            mlflow.log_metrics({
+                "val_auc": result["val"]["auc"],
+                "val_f1": result["val"]["f1"],
+                "global_test_auc": result["test"]["auc"],
+                "global_test_f1": result["test"]["f1"],
+                "global_test_precision": result["test"]["precision"],
+                "global_test_recall": result["test"]["recall"],
+            })
+
+            # Log the model artifact
+            model_path = os.path.join(MODELS_DIR, f"baseline_{bank_id}.pth")
+            mlflow.log_artifact(model_path)
 
         print(f"  [{bank_id}] Local Val metrics:")
         print_metrics(result["val"], prefix="  ")
@@ -116,7 +151,6 @@ def main():
                 print(f"  ⚠ Federated model did not outperform avg baseline")
     else:
         print(f"\n  No FL results found. Run 'python run_fl.py' first")
-        print(f"  to compare federated vs baseline performance.")
 
     # Save baseline results
     with open("baseline_results.json", "w") as f:
