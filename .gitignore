@@ -1,0 +1,5 @@
+banks/
+*.csv
+*.json
+__pycache__/
+venv/

@@ -1,0 +1,8 @@
+bank_A: train=15019, val=3219, test=3219, fraud_rate=0.0275, features=371
+bank_B: train=106400, val=22800, test=22800, fraud_rate=0.0535, features=371
+bank_C: train=267371, val=57294, test=57294, fraud_rate=0.0274, features=371
+bank_D: train=24586, val=5269, test=5269, fraud_rate=0.0423, features=371
+
+Total CSV columns: 372
+Target: isFraud
+First 5: ['isFraud', 'TransactionAmt', 'ProductCD', 'card1', 'card2']
